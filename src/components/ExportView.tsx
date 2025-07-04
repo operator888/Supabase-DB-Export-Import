@@ -87,7 +87,14 @@ export const ExportView: React.FC<ExportViewProps> = ({ tables, client, getColum
           } catch (schemaErr) {
             console.error(`Schema error for ${table}:`, schemaErr);
             tableInfo.schema = [];
-            tableInfo.schemaError = schemaErr instanceof Error ? schemaErr.message : 'Unknown schema error';
+            let errorMsg = schemaErr instanceof Error ? schemaErr.message : 'Unknown schema error';
+            
+            // Special handling for RLS policy errors
+            if (errorMsg.includes('infinite recursion detected in policy')) {
+              errorMsg = `RLS Policy Error: Row Level Security policies prevent schema access. ${errorMsg}`;
+            }
+            
+            tableInfo.schemaError = errorMsg;
           }
         }
         
@@ -99,6 +106,11 @@ export const ExportView: React.FC<ExportViewProps> = ({ tables, client, getColum
               console.error(`Error fetching data for ${table}:`, dataError);
               tableInfo.data = [];
               tableInfo.dataError = dataError.message;
+              
+              // Special handling for RLS policy errors
+              if (dataError.code === '42P17') {
+                tableInfo.dataError = `RLS Policy Error: ${dataError.message}. This table has Row Level Security policies that prevent access.`;
+              }
             } else {
               tableInfo.data = rows || [];
               console.log(`Fetched ${tableInfo.data.length} rows for ${table}`);
@@ -114,6 +126,21 @@ export const ExportView: React.FC<ExportViewProps> = ({ tables, client, getColum
       }
 
       console.log('Export data prepared:', exportData);
+
+      // Generate summary of issues
+      const tablesWithErrors = Object.entries(exportData).filter(([_, tableInfo]: [string, any]) => 
+        tableInfo.schemaError || tableInfo.dataError
+      );
+      
+      if (tablesWithErrors.length > 0) {
+        console.warn(`Export completed with errors in ${tablesWithErrors.length} tables:`, 
+          tablesWithErrors.map(([tableName, tableInfo]: [string, any]) => ({
+            table: tableName,
+            schemaError: tableInfo.schemaError,
+            dataError: tableInfo.dataError
+          }))
+        );
+      }
 
       const exportContent = format === 'json' 
         ? JSON.stringify(exportData, null, 2)
@@ -188,7 +215,19 @@ export const ExportView: React.FC<ExportViewProps> = ({ tables, client, getColum
   const generateSQLExport = (data: any): string => {
     let sql = '-- Supabase Database Export\n';
     sql += `-- Generated on: ${new Date().toISOString()}\n`;
-    sql += `-- Tables exported: ${Object.keys(data).join(', ')}\n\n`;
+    sql += `-- Tables exported: ${Object.keys(data).join(', ')}\n`;
+    
+    // Add summary of issues
+    const tablesWithErrors = Object.entries(data).filter(([_, tableInfo]: [string, any]) => 
+      tableInfo.schemaError || tableInfo.dataError
+    );
+    
+    if (tablesWithErrors.length > 0) {
+      sql += `-- WARNING: ${tablesWithErrors.length} tables had access errors (likely due to RLS policies)\n`;
+      sql += `-- Affected tables: ${tablesWithErrors.map(([name]) => name).join(', ')}\n`;
+    }
+    
+    sql += '\n';
     
     Object.entries(data).forEach(([tableName, tableInfo]: [string, any]) => {
       sql += `-- ============================================\n`;
@@ -243,11 +282,13 @@ export const ExportView: React.FC<ExportViewProps> = ({ tables, client, getColum
       }
       
       if (tableInfo.schemaError) {
-        sql += `-- Schema Error: ${tableInfo.schemaError}\n`;
+        sql += `-- SCHEMA ERROR: ${tableInfo.schemaError}\n`;
+        sql += `-- This table's schema could not be accessed due to database permissions.\n`;
       }
       
       if (tableInfo.dataError) {
-        sql += `-- Data Error: ${tableInfo.dataError}\n`;
+        sql += `-- DATA ERROR: ${tableInfo.dataError}\n`;
+        sql += `-- This table's data could not be accessed due to database permissions.\n`;
       }
       
       sql += '\n';
