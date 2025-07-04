@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
 import { Upload, FileText, AlertCircle, CheckCircle, Database } from 'lucide-react';
-import { useSupabase } from '../hooks/useSupabase';
+import { SupabaseClient } from '@supabase/supabase-js';
 
-export const ImportView: React.FC = () => {
+interface ImportViewProps {
+  client: SupabaseClient | null;
+  executeSQL: (sql: string) => Promise<any>;
+}
+
+export const ImportView: React.FC<ImportViewProps> = ({ client, executeSQL }) => {
   const [dragOver, setDragOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importStatus, setImportStatus] = useState<'idle' | 'validating' | 'importing' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [importResults, setImportResults] = useState<any>(null);
-  const { client, executeSQL } = useSupabase();
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -287,7 +291,7 @@ export const ImportView: React.FC = () => {
                               View error details ({importResults.errors.length} errors)
                             </summary>
                             <ul className="mt-2 space-y-1 text-red-600">
-                              {importResults.errors.slice(0, 10).map((error, index) => (
+                              {importResults.errors.slice(0, 10).map((error: string, index: number) => (
                                 <li key={index}>• {error}</li>
                               ))}
                               {importResults.errors.length > 10 && (

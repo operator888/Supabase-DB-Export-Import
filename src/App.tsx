@@ -21,7 +21,8 @@ function App() {
     getTableData,
     insertRow,
     updateRow,
-    deleteRow
+    deleteRow,
+    executeSQL
   } = useSupabase();
 
   const [tables, setTables] = useState<string[]>([]);
@@ -183,7 +184,10 @@ function App() {
           )}
           
           {currentView === 'import' && (
-            <ImportView />
+            <ImportView 
+              client={client}
+              executeSQL={executeSQL}
+            />
           )}
         </div>
       </div>
