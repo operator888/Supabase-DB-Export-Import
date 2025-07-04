@@ -10,12 +10,14 @@ import { DatabaseConnection, TableInfo, TableData } from './types/database';
 
 function App() {
   const {
+    client,
     isConnected,
     error,
     loading,
     connect,
     disconnect,
     getTables,
+    getColumns,
     getTableData,
     insertRow,
     updateRow,
@@ -173,7 +175,11 @@ function App() {
           )}
           
           {currentView === 'export' && (
-            <ExportView tables={tables} />
+            <ExportView 
+              tables={tables} 
+              client={client}
+              getColumns={getColumns}
+            />
           )}
           
           {currentView === 'import' && (

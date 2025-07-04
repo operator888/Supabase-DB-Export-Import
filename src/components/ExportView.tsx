@@ -1,19 +1,23 @@
 import React, { useState } from 'react';
 import { Download, FileText, Database, AlertCircle } from 'lucide-react';
-import { useSupabase } from '../hooks/useSupabase';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { ColumnInfo } from '../types/database';
 
 interface ExportViewProps {
   tables: string[];
+  client: SupabaseClient | null;
+  getColumns: (tableName: string) => Promise<ColumnInfo[]>;
 }
 
-export const ExportView: React.FC<ExportViewProps> = ({ tables }) => {
+export const ExportView: React.FC<ExportViewProps> = ({ tables, client, getColumns }) => {
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
   const [format, setFormat] = useState<'json' | 'sql'>('json');
   const [includeSchema, setIncludeSchema] = useState(true);
   const [includeData, setIncludeData] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { client, getColumns } = useSupabase();
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [downloadFilename, setDownloadFilename] = useState<string>('');
 
   const handleTableToggle = (table: string) => {
     setSelectedTables(prev => 
@@ -39,10 +43,34 @@ export const ExportView: React.FC<ExportViewProps> = ({ tables }) => {
   };
 
   const handleExport = async () => {
-    if (!client || selectedTables.length === 0) return;
+    console.log('Export button clicked!');
+    console.log('Client exists:', !!client);
+    console.log('Selected tables:', selectedTables);
+    console.log('Include schema:', includeSchema);
+    console.log('Include data:', includeData);
+    
+    if (!client) {
+      console.error('No client available');
+      setError('No database connection. Please connect to a database first.');
+      return;
+    }
+    
+    if (selectedTables.length === 0) {
+      console.error('No tables selected');
+      setError('Please select at least one table to export.');
+      return;
+    }
+    
+    if (!includeSchema && !includeData) {
+      console.error('Neither schema nor data selected');
+      setError('Please select either schema or data (or both) to export.');
+      return;
+    }
 
     setLoading(true);
     setError(null);
+    setDownloadUrl(null);
+    setDownloadFilename('');
     
     try {
       const exportData: any = {};
@@ -92,26 +120,63 @@ export const ExportView: React.FC<ExportViewProps> = ({ tables }) => {
         : generateSQLExport(exportData);
 
       console.log('Export content length:', exportContent.length);
+      console.log('Export content preview:', exportContent.substring(0, 500));
 
       // Create and download the file
-      const blob = new Blob([exportContent], { 
-        type: format === 'json' ? 'application/json' : 'text/sql' 
-      });
-      
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `supabase-export-${new Date().toISOString().split('T')[0]}.${format}`;
-      
-      // Append to body, click, and remove
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      
-      // Clean up the URL
-      URL.revokeObjectURL(url);
-      
-      console.log('Export completed successfully');
+      try {
+        const blob = new Blob([exportContent], { 
+          type: format === 'json' ? 'application/json' : 'text/sql' 
+        });
+        
+        console.log('Blob created:', blob.size, 'bytes');
+        
+        const url = URL.createObjectURL(blob);
+        console.log('Object URL created:', url);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `supabase-export-${new Date().toISOString().split('T')[0]}.${format}`;
+        a.style.display = 'none'; // Hide the link
+        
+        console.log('Download filename:', a.download);
+        
+        // Append to body, click, and remove
+        document.body.appendChild(a);
+        console.log('Link added to body, about to click...');
+        
+        // Use setTimeout to ensure the link is properly attached before clicking
+        setTimeout(() => {
+          try {
+            a.click();
+            console.log('Link clicked');
+          } catch (clickError) {
+            console.error('Error clicking download link:', clickError);
+            // Fallback: provide manual download link
+            setDownloadUrl(url);
+            setDownloadFilename(a.download);
+            setError('Automatic download failed. Please use the manual download link below.');
+          }
+          
+          // Clean up
+          try {
+            document.body.removeChild(a);
+            console.log('Link removed from body');
+          } catch (removeError) {
+            console.error('Error removing link:', removeError);
+          }
+          
+          // Only clean up URL if not using for manual download
+          if (!downloadUrl) {
+            URL.revokeObjectURL(url);
+            console.log('Object URL cleaned up');
+          }
+        }, 100);
+        
+        console.log('Export completed successfully');
+      } catch (downloadError) {
+        console.error('Error during download process:', downloadError);
+        throw new Error('Failed to download file: ' + (downloadError instanceof Error ? downloadError.message : 'Unknown download error'));
+      }
     } catch (error) {
       console.error('Export failed:', error);
       setError('Export failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -205,6 +270,28 @@ export const ExportView: React.FC<ExportViewProps> = ({ tables }) => {
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
           <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
           <span className="text-red-700 text-sm">{error}</span>
+        </div>
+      )}
+
+      {downloadUrl && (
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-blue-700 text-sm mb-3">Manual download required:</p>
+          <a
+            href={downloadUrl}
+            download={downloadFilename}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            onClick={() => {
+              // Clean up after manual download
+              setTimeout(() => {
+                URL.revokeObjectURL(downloadUrl);
+                setDownloadUrl(null);
+                setDownloadFilename('');
+              }, 1000);
+            }}
+          >
+            <Download className="w-4 h-4" />
+            Download {downloadFilename}
+          </a>
         </div>
       )}
 
@@ -339,6 +426,12 @@ export const ExportView: React.FC<ExportViewProps> = ({ tables }) => {
               onClick={handleExport}
               disabled={loading || selectedTables.length === 0 || (!includeSchema && !includeData)}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title={
+                loading ? 'Export in progress...' :
+                selectedTables.length === 0 ? 'Please select at least one table' :
+                (!includeSchema && !includeData) ? 'Please select schema and/or data to export' :
+                'Click to export selected tables'
+              }
             >
               {loading ? (
                 <>
@@ -352,6 +445,17 @@ export const ExportView: React.FC<ExportViewProps> = ({ tables }) => {
                 </>
               )}
             </button>
+
+            {/* Debug info - remove this after fixing */}
+            <div className="text-xs text-gray-500 mt-2 p-2 bg-gray-50 rounded">
+              <div>Debug Info:</div>
+              <div>Loading: {loading ? 'Yes' : 'No'}</div>
+              <div>Selected tables: {selectedTables.length}</div>
+              <div>Include schema: {includeSchema ? 'Yes' : 'No'}</div>
+              <div>Include data: {includeData ? 'Yes' : 'No'}</div>
+              <div>Button disabled: {(loading || selectedTables.length === 0 || (!includeSchema && !includeData)) ? 'Yes' : 'No'}</div>
+              <div>Client connected: {client ? 'Yes' : 'No'}</div>
+            </div>
 
             {loading && (
               <div className="text-xs text-gray-600 text-center">
