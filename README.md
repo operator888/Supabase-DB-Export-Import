@@ -2,7 +2,7 @@
 
 A modern, web-based database management interface for Supabase databases. Built with React, TypeScript, and Tailwind CSS, this application provides a comprehensive solution for managing your Supabase database tables with an intuitive user interface.
 
-![Supabase DB Manager](https://images.pexels.com/photos/1181671/pexels-photo-1181671.jpeg?auto=compress&cs=tinysrgb&w=1200&h=400&fit=crop)
+![Supabase DB Manager]
 
 ## 🚀 Features
 
