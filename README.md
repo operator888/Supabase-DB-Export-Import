@@ -238,4 +238,7 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ---
 
-Built with ❤️ for the Supabase community
+Built with ❤️ for the Vibe coders community
+
+Developer URL
+https://theodorosdimitriou.com/
