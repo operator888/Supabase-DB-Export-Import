@@ -30,14 +30,38 @@ export const ImportView: React.FC<ImportViewProps> = ({ client, executeSQL }) =>
     
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      setSelectedFile(files[0]);
+      const file = files[0];
+      
+      // Check file size (10MB limit)
+      const maxSize = 10 * 1024 * 1024; // 10MB in bytes
+      if (file.size > maxSize) {
+        setErrorMessage(`File size (${(file.size / 1024 / 1024).toFixed(1)}MB) exceeds the 10MB limit. Please use a smaller file.`);
+        setImportStatus('error');
+        return;
+      }
+      
+      setSelectedFile(file);
+      setErrorMessage(''); // Clear any previous errors
+      setImportStatus('idle');
     }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      setSelectedFile(files[0]);
+      const file = files[0];
+      
+      // Check file size (10MB limit)
+      const maxSize = 10 * 1024 * 1024; // 10MB in bytes
+      if (file.size > maxSize) {
+        setErrorMessage(`File size (${(file.size / 1024 / 1024).toFixed(1)}MB) exceeds the 10MB limit. Please use a smaller file.`);
+        setImportStatus('error');
+        return;
+      }
+      
+      setSelectedFile(file);
+      setErrorMessage(''); // Clear any previous errors
+      setImportStatus('idle');
     }
   };
 
@@ -96,11 +120,20 @@ export const ImportView: React.FC<ImportViewProps> = ({ client, executeSQL }) =>
         
         // Import data if available
         if (tableData.data && Array.isArray(tableData.data)) {
+          console.log(`Importing ${tableData.data.length} rows into ${tableName}`);
+          
           for (const row of tableData.data) {
             try {
               const { error } = await client!.from(tableName).insert(row);
               if (error) {
-                results.errors.push(`Insert error in ${tableName}: ${error.message}`);
+                let errorMsg = `Insert error in ${tableName}: ${error.message}`;
+                
+                // Special handling for RLS policy errors
+                if (error.code === '42P17') {
+                  errorMsg = `RLS Policy Error in ${tableName}: ${error.message}. This table has Row Level Security policies that prevent data insertion.`;
+                }
+                
+                results.errors.push(errorMsg);
               } else {
                 results.rowsInserted++;
               }
@@ -134,7 +167,14 @@ export const ImportView: React.FC<ImportViewProps> = ({ client, executeSQL }) =>
         await executeSQL(statement);
         results.statementsExecuted++;
       } catch (error) {
-        results.errors.push(`SQL Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        let errorMsg = `SQL Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        
+        // Special handling for RLS policy errors
+        if (error instanceof Error && error.message.includes('infinite recursion detected in policy')) {
+          errorMsg = `RLS Policy Error: ${error.message}. Row Level Security policies are preventing this operation.`;
+        }
+        
+        results.errors.push(errorMsg);
       }
     }
 
@@ -142,7 +182,17 @@ export const ImportView: React.FC<ImportViewProps> = ({ client, executeSQL }) =>
   };
 
   const handleImport = async () => {
-    if (!selectedFile || !client) return;
+    if (!selectedFile) {
+      setErrorMessage('Please select a file to import.');
+      setImportStatus('error');
+      return;
+    }
+    
+    if (!client) {
+      setErrorMessage('No database connection. Please connect to a database first.');
+      setImportStatus('error');
+      return;
+    }
 
     setImportStatus('validating');
     setErrorMessage('');
@@ -249,7 +299,7 @@ export const ImportView: React.FC<ImportViewProps> = ({ client, executeSQL }) =>
                   Drop your file here
                 </p>
                 <p className="text-gray-600 mb-4">
-                  Supports JSON and SQL files (max 10MB)
+                  Supports JSON and SQL files (max 10MB enforced)
                 </p>
                 <label className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors">
                   <span>Choose File</span>
@@ -271,7 +321,13 @@ export const ImportView: React.FC<ImportViewProps> = ({ client, executeSQL }) =>
                         {selectedFile.name}
                       </p>
                       <p className="text-xs text-gray-600">
-                        {(selectedFile.size / 1024).toFixed(1)} KB
+                        {selectedFile.size > 1024 * 1024 
+                          ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB`
+                          : `${(selectedFile.size / 1024).toFixed(1)} KB`
+                        }
+                        {selectedFile.size > 5 * 1024 * 1024 && (
+                          <span className="text-yellow-600 ml-2">• Large file</span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -347,6 +403,20 @@ export const ImportView: React.FC<ImportViewProps> = ({ client, executeSQL }) =>
                     </>
                   )}
                 </button>
+
+                {/* Debug info */}
+                <div className="text-xs text-gray-500 mt-4 p-2 bg-gray-50 rounded">
+                  <div>Debug Info:</div>
+                  <div>File selected: {selectedFile ? 'Yes' : 'No'}</div>
+                  <div>Client connected: {client ? 'Yes' : 'No'}</div>
+                  <div>Import status: {importStatus}</div>
+                  {selectedFile && (
+                    <div>File size: {selectedFile.size > 1024 * 1024 
+                      ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB`
+                      : `${(selectedFile.size / 1024).toFixed(1)} KB`
+                    }</div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
